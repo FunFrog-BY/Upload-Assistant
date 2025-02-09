@@ -87,7 +87,7 @@ async def process_meta(meta, base_dir):
     meta['name_notag'], meta['name'], meta['clean_name'], meta['potential_missing'] = await prep.get_name(meta)
     parser = Args(config)
     helper = UploadHelper()
-    if meta.get('trackers', None) is not None:
+    if meta.get('trackers'):
         trackers = meta['trackers']
     else:
         default_trackers = config['TRACKERS'].get('default_trackers', '')
