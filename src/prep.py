@@ -58,7 +58,7 @@ class Prep():
         return str(value).strip().lower() == "true"
 
     async def gather_prep(self, meta, mode):
-        meta['cutoff'] = int(self.config['DEFAULT'].get('cutoff_screens', 3))
+        meta['cutoff'] = int(self.config['DEFAULT'].get('cutoff_screens', 1))
         task_limit = self.config['DEFAULT'].get('task_limit', "0")
         if int(task_limit) > 0:
             meta['task_limit'] = task_limit
@@ -257,7 +257,7 @@ class Prep():
                         btn_id = meta.get('btn')
                         btn_api = config['DEFAULT'].get('btn_api')
                         await get_btn_torrents(btn_api, btn_id, meta)
-                        if meta.get('imdb') is not None:
+                        if meta.get('imdb_id') is not None:
                             found_match = True
                     elif specific_tracker == "BHD":
                         bhd_api = config['DEFAULT'].get('bhd_api')
@@ -265,7 +265,7 @@ class Prep():
                         if not meta.get('infohash'):
                             meta['infohash'] = meta['bhd']
                         await get_bhd_torrents(bhd_api, bhd_rss_key, meta['infohash'], meta)
-                        if meta.get('imdb') is not None:
+                        if meta.get('imdb_id') is not None:
                             found_match = True
                     else:
                         meta = await process_tracker(specific_tracker, meta)
