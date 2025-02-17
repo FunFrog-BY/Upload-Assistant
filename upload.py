@@ -105,7 +105,7 @@ async def process_meta(meta, base_dir):
         if meta.get('debug', False):
             editargs += ("--debug",)
         if meta.get('trackers', None) is not None:
-            editargs += ("--trackers", ', '.join(meta['trackers']))
+            editargs += ("--trackers", *meta["trackers"])
         meta, help, before_args = parser.parse(editargs, meta)
         meta['edit'] = True
         meta = await prep.gather_prep(meta=meta, mode='cli')
@@ -114,7 +114,10 @@ async def process_meta(meta, base_dir):
 
     successful_trackers = await process_all_trackers(meta)
 
-    meta['skip_uploading'] = int(config['DEFAULT'].get('tracker_pass_checks', 1))
+    if meta.get('trackers_pass') is not None:
+        meta['skip_uploading'] = meta.get('trackers_pass')
+    else:
+        meta['skip_uploading'] = int(config['DEFAULT'].get('tracker_pass_checks', 1))
     if successful_trackers < meta['skip_uploading'] and not meta['debug']:
         console.print(f"[red]Not enough successful trackers ({successful_trackers}/{meta['skip_uploading']}). EXITING........[/red]")
 
@@ -122,7 +125,8 @@ async def process_meta(meta, base_dir):
         meta['we_are_uploading'] = True
         filename = meta.get('title', None)
         bdinfo = meta.get('bdinfo', None)
-        videopath = meta.get('video', None)
+        videopath = meta.get('filelist', [None])
+        videopath = videopath[0] if videopath else None
         console.print(f"Processing {filename} for upload")
         if 'manual_frames' not in meta:
             meta['manual_frames'] = {}
@@ -131,16 +135,16 @@ async def process_meta(meta, base_dir):
         if meta['is_disc'] == "BDMV":
             use_vs = meta.get('vapoursynth', False)
             try:
-                disc_screenshots(
+                await disc_screenshots(
                     meta, filename, bdinfo, meta['uuid'], base_dir, use_vs,
                     meta.get('image_list', []), meta.get('ffdebug', False), None
                 )
             except Exception as e:
-                print(f"Error during BDMV screenshot capture: {e}")
+                console.print(f"[red]Error during BDMV screenshot capture: {e}")
 
         elif meta['is_disc'] == "DVD":
             try:
-                dvd_screenshots(
+                await dvd_screenshots(
                     meta, 0, None, None
                 )
             except Exception as e:
@@ -148,7 +152,9 @@ async def process_meta(meta, base_dir):
 
         else:
             try:
-                screenshots(
+                if meta['debug']:
+                    console.print(f"videopath: {videopath}, filename: {filename}, meta: {meta['uuid']}, base_dir: {base_dir}, manual_frames: {manual_frames}")
+                await screenshots(
                     videopath, filename, meta['uuid'], base_dir, meta,
                     manual_frames=manual_frames  # Pass additional kwargs directly
                 )
@@ -160,7 +166,7 @@ async def process_meta(meta, base_dir):
             if 'image_list' not in meta:
                 meta['image_list'] = []
             return_dict = {}
-            new_images, dummy_var = upload_screens(meta, meta['screens'], 1, 0, meta['screens'], [], return_dict=return_dict)
+            new_images, dummy_var = await upload_screens(meta, meta['screens'], 1, 0, meta['screens'], [], return_dict=return_dict)
 
         elif meta.get('skip_imghost_upload', False) is True and meta.get('image_list', False) is False:
             meta['image_list'] = []
@@ -222,7 +228,15 @@ async def save_processed_file(log_file, file_path):
         json.dump(list(processed_files), f, indent=4)
 
 
+def reset_terminal():
+    """Reset the terminal to a sane state."""
+    if os.name == "posix" and sys.stdin.isatty():
+        os.system("stty sane")
+
+
 async def do_the_thing(base_dir):
+    await asyncio.sleep(0.1)  # Ensure it's not racing
+    reset_terminal()
     meta = dict()
     paths = []
     for each in sys.argv[1:]:
@@ -231,91 +245,102 @@ async def do_the_thing(base_dir):
         else:
             break
 
-    meta, help, before_args = parser.parse(tuple(' '.join(sys.argv[1:]).split(' ')), meta)
-    if meta.get('cleanup') and os.path.exists(f"{base_dir}/tmp"):
-        shutil.rmtree(f"{base_dir}/tmp")
-        console.print("[bold green]Successfully emptied tmp directory")
+    try:
+        meta, help, before_args = parser.parse(tuple(' '.join(sys.argv[1:]).split(' ')), meta)
 
-    if not meta.get('path'):
-        exit(0)
+        if meta.get('cleanup') and os.path.exists(f"{base_dir}/tmp"):
+            shutil.rmtree(f"{base_dir}/tmp")
+            console.print("[bold green]Successfully emptied tmp directory")
 
-    path = meta['path']
-    path = os.path.abspath(path)
-    if path.endswith('"'):
-        path = path[:-1]
+        if not meta.get('path'):
+            exit(0)
 
-    queue, log_file = await handle_queue(path, meta, paths, base_dir)
+        path = meta['path']
+        path = os.path.abspath(path)
+        if path.endswith('"'):
+            path = path[:-1]
 
-    processed_files_count = 0
-    base_meta = {k: v for k, v in meta.items()}
-    for path in queue:
-        total_files = len(queue)
-        try:
-            meta = base_meta.copy()
-            meta['path'] = path
-            meta['uuid'] = None
+        queue, log_file = await handle_queue(path, meta, paths, base_dir)
 
-            if not path:
-                raise ValueError("The 'path' variable is not defined or is empty.")
+        processed_files_count = 0
+        base_meta = {k: v for k, v in meta.items()}
+        for path in queue:
+            total_files = len(queue)
+            try:
+                meta = base_meta.copy()
+                meta['path'] = path
+                meta['uuid'] = None
 
-            meta_file = os.path.join(base_dir, "tmp", os.path.basename(path), "meta.json")
+                if not path:
+                    raise ValueError("The 'path' variable is not defined or is empty.")
 
-            if meta.get('delete_meta') and os.path.exists(meta_file):
-                os.remove(meta_file)
-                console.print("[bold red]Successfully deleted meta.json")
+                meta_file = os.path.join(base_dir, "tmp", os.path.basename(path), "meta.json")
 
-            if os.path.exists(meta_file):
-                with open(meta_file, "r") as f:
-                    saved_meta = json.load(f)
-                    meta.update(await merge_meta(meta, saved_meta, path))
+                if meta.get('delete_meta') and os.path.exists(meta_file):
+                    os.remove(meta_file)
+                    console.print("[bold red]Successfully deleted meta.json")
+
+                if os.path.exists(meta_file):
+                    with open(meta_file, "r") as f:
+                        saved_meta = json.load(f)
+                        console.print("[yellow]Existing metadata file found, it holds cached values")
+                        meta.update(await merge_meta(meta, saved_meta, path))
+                else:
+                    if meta['debug']:
+                        console.print(f"[yellow]No metadata file found at {meta_file}")
+
+            except Exception as e:
+                console.print(f"[red]Failed to load metadata for path '{path}': {e}")
+                reset_terminal()
+
+            if meta['debug']:
+                start_time = time.time()
+
+            console.print(f"[green]Gathering info for {os.path.basename(path)}")
+            await process_meta(meta, base_dir)
+
+            if 'we_are_uploading' not in meta:
+                console.print("we are not uploading.......")
+                if meta.get('queue') is not None:
+                    processed_files_count += 1
+                    console.print(f"[cyan]Processed {processed_files_count}/{total_files} files.")
+                    if not meta['debug']:
+                        if log_file:
+                            await save_processed_file(log_file, path)
+
             else:
-                if meta['debug']:
-                    console.print(f"[yellow]No metadata file found at {meta_file}")
+                await process_trackers(meta, config, client, console, api_trackers, tracker_class_map, http_trackers, other_api_trackers)
+                if meta.get('queue') is not None:
+                    processed_files_count += 1
+                    console.print(f"[cyan]Processed {processed_files_count}/{total_files} files.")
+                    if not meta['debug']:
+                        if log_file:
+                            await save_processed_file(log_file, path)
 
-        except Exception as e:
-            console.print(f"[red]Failed to load metadata for path '{path}': {e}")
+            if 'limit_queue' in meta and meta['limit_queue'] > 0:
+                if processed_files_count >= meta['limit_queue']:
+                    console.print(f"[red]Processing limit of {meta['limit_queue']} files reached. Stopping queue processing.")
+                    break
 
-        if meta['debug']:
-            start_time = time.time()
+            if meta['debug']:
+                finish_time = time.time()
+                console.print(f"Uploads processed in {finish_time - start_time:.4f} seconds")
 
-        console.print(f"[green]Gathering info for {os.path.basename(path)}")
-        await process_meta(meta, base_dir)
+    except Exception as e:
+        console.print(f"[bold red]An unexpected error occurred: {e}")
+        reset_terminal()
 
-        if 'we_are_uploading' not in meta:
-            console.print("we are not uploading.......")
-            if meta.get('queue') is not None:
-                processed_files_count += 1
-                console.print(f"[cyan]Processed {processed_files_count}/{total_files} files.")
-                if not meta['debug']:
-                    if log_file:
-                        await save_processed_file(log_file, path)
-
-        else:
-            await process_trackers(meta, config, client, console, api_trackers, tracker_class_map, http_trackers, other_api_trackers)
-            if meta.get('queue') is not None:
-                processed_files_count += 1
-                console.print(f"[cyan]Processed {processed_files_count}/{total_files} files.")
-                if not meta['debug']:
-                    if log_file:
-                        await save_processed_file(log_file, path)
-
-        if 'limit_queue' in meta and meta['limit_queue'] > 0:
-            if processed_files_count >= meta['limit_queue']:
-                console.print(f"[red]Processing limit of {meta['limit_queue']} files reached. Stopping queue processing.")
-                break
-
-        if meta['debug']:
-            finish_time = time.time()
-            console.print(f"Uploads processed in {finish_time - start_time:.4f} seconds")
-
+    finally:
+        reset_terminal()
 
 if __name__ == '__main__':
     pyver = platform.python_version_tuple()
     if int(pyver[0]) != 3 or int(pyver[1]) < 9:
-        console.print("[bold red]Python version is too low. Please use Python 3.8 or higher.")
+        console.print("[bold red]Python version is too low. Please use Python 3.9 or higher.")
         sys.exit(1)
 
     try:
         asyncio.run(do_the_thing(base_dir))  # Pass the correct base_dir value here
     except (KeyboardInterrupt):
         console.print("[bold red]Program interrupted. Exiting.")
+        reset_terminal()

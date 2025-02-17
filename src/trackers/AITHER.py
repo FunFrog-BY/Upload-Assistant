@@ -59,9 +59,11 @@ class AITHER():
         base_dir = meta['base_dir']
         uuid = meta['uuid']
         specified_dir_path = os.path.join(base_dir, "tmp", uuid, "*.nfo")
+        bhd_dir_path = os.path.join(base_dir, "tmp", uuid, "bhd.nfo")
+        bhd_files = glob.glob(bhd_dir_path)
         nfo_files = glob.glob(specified_dir_path)
         nfo_file = None
-        if nfo_files:
+        if nfo_files and not bhd_files:
             nfo_file = open(nfo_files[0], 'rb')
         if nfo_file:
             files['nfo'] = ("nfo_file.nfo", nfo_file, "text/plain")
@@ -179,9 +181,6 @@ class AITHER():
         if meta['is_disc'] == "DVD" or (name_type == "REMUX" and source in ("PAL DVD", "NTSC DVD", "DVD")):
             aither_name = aither_name.replace((meta['source']), f"{resolution} {meta['source']}", 1)
             aither_name = aither_name.replace((meta['audio']), f"{video_codec} {meta['audio']}", 1)
-
-        if meta['category'] == "TV" and meta.get('tv_pack', 0) == 0 and meta.get('episode_title_storage', '').strip() != '' and meta['episode'].strip() != '':
-            aither_name = aither_name.replace(meta['episode'], f"{meta['episode']} {meta['episode_title_storage']}", 1)
 
         return aither_name
 

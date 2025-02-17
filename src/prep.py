@@ -5,7 +5,7 @@ from src.clients import Clients
 from data.config import config
 from src.trackersetup import tracker_class_map
 from src.tvmaze import search_tvmaze
-from src.imdb import get_imdb_info_api, search_imdb, imdb_other_meta
+from src.imdb import get_imdb_info_api, search_imdb
 from src.trackermeta import update_metadata_from_tracker
 from src.tmdb import tmdb_other_meta, get_tmdb_imdb_from_mediainfo, get_tmdb_from_imdb, get_tmdb_id
 from src.region import get_region, get_distributor, get_service
@@ -207,10 +207,10 @@ class Prep():
                 description.write(description_text)
 
         client = Clients(config=config)
-        only_id = config['DEFAULT'].get('only_id', False)
+        only_id = meta.get('onlyID', config['DEFAULT'].get('only_id', False))
         if meta.get('infohash') is not None:
             meta = await client.get_ptp_from_hash(meta)
-        if not meta.get('image_list'):
+        if not meta.get('image_list') and not meta.get('edit', False):
             # Reuse information from trackers with fallback
             found_match = False
 
@@ -264,7 +264,7 @@ class Prep():
                         bhd_rss_key = config['DEFAULT'].get('bhd_rss_key')
                         if not meta.get('infohash'):
                             meta['infohash'] = meta['bhd']
-                        await get_bhd_torrents(bhd_api, bhd_rss_key, meta['infohash'], meta)
+                        await get_bhd_torrents(bhd_api, bhd_rss_key, meta['infohash'], meta, only_id)
                         if meta.get('imdb_id') is not None:
                             found_match = True
                     else:
@@ -286,31 +286,36 @@ class Prep():
         else:
             console.print("Skipping existing search as meta already populated")
 
+        if meta['debug']:
+            console.print("ID inputs into prep")
+            console.print("imdb_id:", meta.get("imdb_id"))
+            console.print("tvdb_id:", meta.get("tvdb_id"))
+            console.print("tmdb_id:", meta.get("tmdb_id"))
+            console.print("tmdb_manual:", meta.get("tmdb_manual"))
+            console.print("category:", meta.get("category"))
         console.print("[yellow]Building meta data.....")
         if meta['debug']:
             meta_start_time = time.time()
         if meta.get('manual_language'):
             meta['original_langauge'] = meta.get('manual_language').lower()
-        meta['tmdb'] = meta.get('tmdb_manual', None)
+        meta['tmdb_id'] = meta.get('tmdb_manual', None)
         meta['type'] = await self.get_type(video, meta['scene'], meta['is_disc'], meta)
         if meta.get('category', None) is None:
             meta['category'] = await self.get_cat(video)
         else:
             meta['category'] = meta['category'].upper()
-        if meta.get('tmdb', None) is None and meta.get('imdb', None) is None:
-            meta['category'], meta['tmdb'], meta['imdb'] = await get_tmdb_imdb_from_mediainfo(mi, meta['category'], meta['is_disc'], meta['tmdb'], meta['imdb'])
-        if meta.get('tmdb', None) is None and meta.get('imdb', None) is None:
+        if meta.get('tmdb_id', None) is None and meta.get('imdb_id', None) is None:
+            meta['category'], meta['tmdb_id'], meta['imdb_id'] = await get_tmdb_imdb_from_mediainfo(mi, meta['category'], meta['is_disc'], meta['tmdb_id'], meta['imdb_id'])
+        if meta.get('tmdb_id', None) is None and meta.get('imdb_id', None) is None:
             meta = await get_tmdb_id(filename, meta['search_year'], meta, meta['category'], untouched_filename)
-        elif meta.get('imdb', None) is not None and meta.get('tmdb_manual', None) is None:
-            meta['imdb_id'] = str(meta['imdb']).replace('tt', '')
+        elif meta.get('imdb_id', None) is not None and meta.get('tmdb_manual', None) is None:
+            if meta['imdb_id'].startswith('tt'):
+                meta['imdb_id'] = meta['imdb_id'][2:]
             meta = await get_tmdb_from_imdb(meta, filename)
         else:
-            meta['tmdb_manual'] = meta.get('tmdb', None)
-
-        # If no tmdb, use imdb for meta
-        if int(meta['tmdb']) == 0:
-            meta = await imdb_other_meta(meta)
-        else:
+            meta['tmdb_manual'] = meta.get('tmdb_id', None)
+        # Get tmdb data
+        if int(meta['tmdb_id']) != 0:
             meta = await tmdb_other_meta(meta)
         # Search tvmaze
         if meta['category'] == "TV":
@@ -320,6 +325,7 @@ class Prep():
         # If no imdb, search for it
         if meta.get('imdb_id', None) is None:
             meta['imdb_id'] = await search_imdb(filename, meta['search_year'])
+        # Get imdb data
         if meta.get('imdb_info', None) is None and int(meta['imdb_id']) != 0:
             meta['imdb_info'] = await get_imdb_info_api(meta['imdb_id'], meta)
         if meta.get('tag', None) is None:
@@ -1324,6 +1330,7 @@ class Prep():
         desclink = meta.get('desclink')
         descfile = meta.get('descfile')
         scene_nfo = False
+        bhd_nfo = False
 
         with open(f"{meta['base_dir']}/tmp/{meta['uuid']}/DESCRIPTION.txt", 'w', newline="", encoding='utf8') as description:
             description.seek(0)
@@ -1354,6 +1361,9 @@ class Prep():
                 if 'auto_nfo' in meta and meta['auto_nfo'] is True:
                     nfo_files = glob.glob(specified_dir_path)
                     scene_nfo = True
+                elif 'bhd_nfo' in meta and meta['bhd_nfo'] is True:
+                    nfo_files = glob.glob(specified_dir_path)
+                    bhd_nfo = True
                 else:
                     nfo_files = glob.glob(source_dir_path)
                 if not nfo_files:
@@ -1376,6 +1386,8 @@ class Prep():
 
                     if scene_nfo is True:
                         description.write(f"[center][spoiler=Scene NFO:][code]{nfo_content}[/code][/spoiler][/center]\n")
+                    elif bhd_nfo is True:
+                        description.write(f"[center][spoiler=FraMeSToR NFO:][code]{nfo_content}[/code][/spoiler][/center]\n")
                     else:
                         description.write(f"[code]{nfo_content}[/code]\n")
                     meta['description'] = "CUSTOM"

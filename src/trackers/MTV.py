@@ -216,12 +216,15 @@ class MTV():
         return description
 
     async def edit_name(self, meta):
+        KNOWN_EXTENSIONS = {".mkv", ".mp4", ".avi", ".ts"}
         if meta['scene'] is True:
             if meta.get('scene_name') != "":
                 mtv_name = meta.get('scene_name')
             else:
                 mtv_name = meta['uuid']
-                mtv_name, _ = os.path.splitext(mtv_name)
+                base, ext = os.path.splitext(mtv_name)
+                if ext.lower() in KNOWN_EXTENSIONS:
+                    mtv_name = base
         else:
             mtv_name = meta['name']
             prefix_removed = False
@@ -244,7 +247,6 @@ class MTV():
                     audio_str = audio_str.replace(token, "")
             if meta.get('type') in ('WEBDL', 'WEBRIP', 'ENCODE') and "DD" in audio_str:
                 mtv_name = mtv_name.replace(audio_str, audio_str.replace(' ', '', 1))
-            mtv_name = mtv_name.replace(meta.get('aka', ''), '')
             if meta['category'] == "TV" and meta.get('tv_pack', 0) == 0 and meta.get('episode_title_storage', '').strip() != '' and meta['episode'].strip() != '':
                 mtv_name = mtv_name.replace(meta['episode'], f"{meta['episode']} {meta['episode_title_storage']}")
             if 'DD+' in meta.get('audio', '') and 'DDP' in meta['uuid']:
@@ -532,7 +534,8 @@ class MTV():
         params = {
             't': 'search',
             'apikey': self.config['TRACKERS'][self.tracker]['api_key'].strip(),
-            'q': ""
+            'q': "",
+            'limit': "100"
         }
 
         if meta['imdb_id'] not in ("0", "", None):

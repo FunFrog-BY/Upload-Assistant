@@ -46,9 +46,9 @@ config = {
         "cutoff_screens": "3",
 
         # multi processing task limit
-        # When capturing/optimizing/uploading images, limit to this many concurrent tasks
-        # defaults to os.cpu_count() if this value not set
-        # "task_limit": "1",
+        # When optimizing images, limit to this many concurrent tasks
+        # defaults to os.cpu_count() // 2 if this value not set
+        # "process_limit": "1",
 
         # Providing the option to change the size of the screenshot thumbnails where supported.
         # Default is 350, ie [img=350]
@@ -80,17 +80,13 @@ config = {
 
         # Absolute limit on processed files in packs.
         # You might not want to process screens/mediainfo for 40 episodes in a season pack.
-        "processLimit": "10",
+        "processLimit": "5",
 
         # Providing the option to add a header, in bbcode, above the screenshot section where supported
         # "screenshot_header": "[center] SCREENSHOTS [/center]",
 
         # Enable lossless PNG Compression (True/False)
         "optimize_images": True,
-
-        # Use only half available CPU cores to avoid memory allocation errors on some seedboxes.
-        # Only when using lossless compression
-        "shared_seedbox": False,
 
         # The name of your default torrent client, set in the torrent client sections below
         "default_torrent_client": "Client1",
@@ -122,9 +118,9 @@ config = {
 
     "TRACKERS": {
         # Which trackers do you want to upload to?
-        # Available tracker: ACM, AITHER, AL, ANT, AR, BHD, BHDTV, BLU, CBR, FNP, FRIKI, HDB, HDT, HUNO, LCD, LST, LT, MTV, NBL, OE, OTW, PSS, PTER, PTP, PTT, R4E, RF, RTF, SN, STC, THR, TIK, TL, ULCX, UTP, YOINK
+        # Available tracker: ACM, AITHER, AL, ANT, AR, BHD, BHDTV, BLU, CBR, FNP, FRIKI, HDB, HDT, HUNO, ITT, JPTV, LCD, LST, LT, MTV, NBL, OE, OTW, PSS, PTER, PTP, PTT, R4E, RF, RTF, SN, STC, THR, TIK, TL, ULCX, UTP, YOINK
         # Remove the trackers from the default_trackers list that are not used, to save being asked everytime about tracker you do not have access too.
-        "default_trackers": "ACM, AITHER, AL, ANT, AR, BHD, BHDTV, BLU, CBR, FNP, FRIKI, HDB, HDT, HUNO, LCD, LST, LT, MTV, NBL, OE, OTW, PSS, PTER, PTP, PTT, R4E, RF, RTF, SN, STC, THR, TIK, TL, ULCX, UTP, YOINK",
+        "default_trackers": "ACM, AITHER, AL, ANT, AR, BHD, BHDTV, BLU, CBR, FNP, FRIKI, HDB, HDT, HUNO, ITT, JPTV, LCD, LST, LT, MTV, NBL, OE, OTW, PSS, PTER, PTP, PTT, R4E, RF, RTF, SN, STC, THR, TIK, TL, ULCX, UTP, YOINK",
 
         "ACM": {
             "api_key": "ACM api key",
@@ -399,7 +395,6 @@ config = {
     },
 
     # enable_search to True will automatically try and find a suitable hash to save having to rehash when creating torrents
-    # Should use the qbit API, but will also use the torrent_storage_dir to find suitable hashes
     # If you find issue, especially in local/remote path mapping, use the "--debug" argument to print out some related details
     "TORRENT_CLIENTS": {
         # Name your torrent clients here, for example, this example is named "Client1" and is set as default_torrent_client above
@@ -413,6 +408,7 @@ config = {
             "qbit_port": "8080",
             "qbit_user": "username",
             "qbit_pass": "password",
+            # only set qBitTorrent torrent_storage_dir if API searching does not work
             # "torrent_storage_dir": "path/to/BT_backup folder"  ## use double-backslash on windows eg: "C:\\client\\backup"
 
             # Remote path mapping (docker/etc.) CASE SENSITIVE
@@ -468,6 +464,24 @@ config = {
             # "local_path" : "/LocalPath",
             # "remote_path" : "/RemotePath"
         },
+
+        "transmission_sample": {
+            "torrent_client": "transmission",
+            "transmission_protocol": "http",  # http or https
+            "transmission_username": "username",
+            "transmission_password": "password",
+            "transmission_host": "localhost",
+            "transmission_port": 9091,
+
+            # "transmission_path" : "/transmission/rpc"
+            # "torrent_storage_dir" : "path/to/config/torrents folder",
+            # "transmission_label" : "Add this label to all uploads"
+
+            # Remote path mapping (docker/etc.) CASE SENSITIVE
+            # "local_path" : "/LocalPath",
+            # "remote_path" : "/RemotePath"
+        },
+
         "watch_sample": {
             "torrent_client": "watch",
             "watch_folder": "/Path/To/Watch/Folder"
