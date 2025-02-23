@@ -20,6 +20,7 @@ img_host = [
 ]
 screens = int(config['DEFAULT'].get('screens', 6))
 task_limit = config['DEFAULT'].get('process_limit', "0")
+cutoff = int(config['DEFAULT'].get('cutoff', 1))
 
 try:
     task_limit = int(task_limit)  # Convert to integer
@@ -41,8 +42,8 @@ async def disc_screenshots(meta, filename, bdinfo, folder_id, base_dir, use_vs, 
         meta['image_list'] = []
     existing_images = [img for img in meta['image_list'] if isinstance(img, dict) and img.get('img_url', '').startswith('http')]
 
-    if len(existing_images) >= meta.get('cutoff') and not force_screenshots:
-        console.print("[yellow]There are already at least {} images in the image list. Skipping additional screenshots.".format(meta.get('cutoff')))
+    if len(existing_images) >= cutoff and not force_screenshots:
+        console.print(f"[yellow]There are already at least {cutoff} images in the image list. Skipping additional screenshots.")
         return
 
     if num_screens is None:
@@ -277,8 +278,8 @@ async def dvd_screenshots(meta, disc_num, num_screens=None, retry_cap=None):
         meta['image_list'] = []
     existing_images = [img for img in meta['image_list'] if isinstance(img, dict) and img.get('img_url', '').startswith('http')]
 
-    if len(existing_images) >= meta.get('cutoff') and not retry_cap:
-        console.print("[yellow]There are already at least {} images in the image list. Skipping additional screenshots.".format(meta.get('cutoff')))
+    if len(existing_images) >= cutoff and not retry_cap:
+        console.print(f"[yellow]There are already at least {cutoff} images in the image list. Skipping additional screenshots.")
         return
     screens = meta.get('screens', 6)
     if num_screens is None:
@@ -561,8 +562,8 @@ async def screenshots(path, filename, folder_id, base_dir, meta, num_screens=Non
 
     existing_images = [img for img in meta['image_list'] if isinstance(img, dict) and img.get('img_url', '').startswith('http')]
 
-    if len(existing_images) >= meta.get('cutoff') and not force_screenshots:
-        console.print("[yellow]There are already at least {} images in the image list. Skipping additional screenshots.".format(meta.get('cutoff')))
+    if len(existing_images) >= cutoff and not force_screenshots:
+        console.print(f"[yellow]There are already at least {cutoff} images in the image list. Skipping additional screenshots.")
         return
 
     if num_screens is None:
@@ -695,11 +696,9 @@ async def screenshots(path, filename, folder_id, base_dir, meta, num_screens=Non
             if "Error" in image_path:
                 console.print(f"[red]{image_path}")
                 continue
+
             retake = False
             image_size = os.path.getsize(image_path)
-            if meta['debug']:
-                console.print("Image paths:", image_path)
-                console.print("Image sizes", image_size)
             if not manual_frames:
                 if image_size <= 75000:
                     console.print(f"[yellow]Image {image_path} is incredibly small, retaking.")
@@ -755,7 +754,6 @@ async def screenshots(path, filename, folder_id, base_dir, meta, num_screens=Non
                     console.print(f"[red]All retry attempts failed for {image_path}. Skipping.[/red]")
                     remaining_retakes.append(image_path)
             else:
-                console.print("Validated result:", valid_results)
                 valid_results.append(image_path)
 
         if remaining_retakes:

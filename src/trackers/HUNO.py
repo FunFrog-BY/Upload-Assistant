@@ -9,6 +9,7 @@ import cli_ui
 import httpx
 from src.trackers.COMMON import COMMON
 from src.console import console
+from src.rehostimages import check_hosts
 
 
 class HUNO():
@@ -35,7 +36,21 @@ class HUNO():
         if huno_name == "SKIPPED":
             console.print("[bold red]Skipping upload to HUNO due to missing audio language")
             return
-        await common.unit3d_edit_desc(meta, self.tracker, self.signature)
+
+        url_host_mapping = {
+            "ibb.co": "imgbb",
+            "ptpimg.me": "ptpimg",
+            "pixhost.to": "pixhost",
+            "imgbox.com": "imgbox",
+            "imagebam.com": "bam",
+        }
+        approved_image_hosts = ['ptpimg', 'imgbox', 'imgbb', 'pixhost', 'bam']
+        await check_hosts(meta, self.tracker, url_host_mapping=url_host_mapping, img_host_index=1, approved_image_hosts=approved_image_hosts)
+        if 'HUNO_images_key' in meta:
+            image_list = meta['HUNO_images_key']
+        else:
+            image_list = meta['image_list']
+        await common.unit3d_edit_desc(meta, self.tracker, self.signature, image_list=image_list)
         await common.edit_torrent(meta, self.tracker, self.source_flag)
         cat_id = await self.get_cat_id(meta['category'])
         type_id = await self.get_type_id(meta)
@@ -63,7 +78,7 @@ class HUNO():
             'type_id': type_id,
             'resolution_id': resolution_id,
             'tmdb': meta['tmdb'],
-            'imdb': meta['imdb_id'].replace('tt', ''),
+            'imdb': meta['imdb_id'],
             'tvdb': meta['tvdb_id'],
             'mal': meta['mal_id'],
             'igdb': 0,
@@ -227,9 +242,6 @@ class HUNO():
         dvd_size = meta.get('dvd_size', "")
         edition = meta.get('edition', "")
         hybrid = "Hybrid" if "HYBRID" in basename.upper() else ""
-        search_year = meta.get('search_year', "")
-        if not str(search_year).strip():
-            search_year = year
         scale = "DS4K" if "DS4K" in basename.upper() else "RM4K" if "RM4K" in basename.upper() else ""
 
         # YAY NAMING FUN
@@ -254,21 +266,21 @@ class HUNO():
         elif meta['category'] == "TV":  # TV SPECIFIC
             if type == "DISC":  # Disk
                 if meta['is_disc'] == 'BDMV':
-                    name = f"{title} ({search_year}) {season}{episode} {three_d} {edition} ({resolution} {region} {uhd} {source} {hybrid} {video_codec} {hdr} {audio} {tag}) {repack}"
+                    name = f"{title} ({year}) {season}{episode} {three_d} {edition} ({resolution} {region} {uhd} {source} {hybrid} {video_codec} {hdr} {audio} {tag}) {repack}"
                 if meta['is_disc'] == 'DVD':
-                    name = f"{title} ({search_year}) {season}{episode} {edition} ({resolution} {dvd_size} {hybrid} {video_codec} {hdr} {audio} {tag}) {repack}"
+                    name = f"{title} ({year}) {season}{episode} {edition} ({resolution} {dvd_size} {hybrid} {video_codec} {hdr} {audio} {tag}) {repack}"
                 elif meta['is_disc'] == 'HDDVD':
-                    name = f"{title} ({search_year}) {season}{episode} {edition} ({resolution} {source} {hybrid} {video_codec} {hdr} {audio} {tag}) {repack}"
+                    name = f"{title} ({year}) {season}{episode} {edition} ({resolution} {source} {hybrid} {video_codec} {hdr} {audio} {tag}) {repack}"
             elif type == "REMUX" and source == "BluRay":  # BluRay Remux
-                name = f"{title} ({search_year}) {season}{episode} {three_d} {edition} ({resolution} {uhd} {source} {hybrid} REMUX {video_codec} {hdr} {audio} {tag}) {repack}"  # SOURCE
+                name = f"{title} ({year}) {season}{episode} {three_d} {edition} ({resolution} {uhd} {source} {hybrid} REMUX {video_codec} {hdr} {audio} {tag}) {repack}"  # SOURCE
             elif type == "REMUX" and source in ("PAL DVD", "NTSC DVD", "DVD"):  # DVD Remux
-                name = f"{title} ({search_year}) {season}{episode} {edition} ({resolution} DVD {hybrid} REMUX {video_codec} {hdr} {audio} {tag}) {repack}"  # SOURCE
+                name = f"{title} ({year}) {season}{episode} {edition} ({resolution} DVD {hybrid} REMUX {video_codec} {hdr} {audio} {tag}) {repack}"  # SOURCE
             elif type == "ENCODE":  # Encode
-                name = f"{title} ({search_year}) {season}{episode} {edition} ({resolution} {scale} {uhd} {source} {hybrid} {video_encode} {hdr} {audio} {tag}) {repack}"  # SOURCE
+                name = f"{title} ({year}) {season}{episode} {edition} ({resolution} {scale} {uhd} {source} {hybrid} {video_encode} {hdr} {audio} {tag}) {repack}"  # SOURCE
             elif type in ("WEBDL", "WEBRIP"):  # WEB
-                name = f"{title} ({search_year}) {season}{episode} {edition} ({resolution} {scale} {uhd} {service} WEB-DL {hybrid} {video_encode} {hdr} {audio} {tag}) {repack}"
+                name = f"{title} ({year}) {season}{episode} {edition} ({resolution} {scale} {uhd} {service} WEB-DL {hybrid} {video_encode} {hdr} {audio} {tag}) {repack}"
             elif type == "HDTV":  # HDTV
-                name = f"{title} ({search_year}) {season}{episode} {edition} ({resolution} HDTV {hybrid} {video_encode} {audio} {tag}) {repack}"
+                name = f"{title} ({year}) {season}{episode} {edition} ({resolution} HDTV {hybrid} {video_encode} {audio} {tag}) {repack}"
 
         if hc:
             name = re.sub(r'((\([0-9]{4}\)))', r'\1 Ensubbed', name)

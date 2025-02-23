@@ -75,7 +75,11 @@ class Clients():
         client = self.config['TORRENT_CLIENTS'][default_torrent_client]
         torrent_storage_dir = client.get('torrent_storage_dir')
         torrent_client = client.get('torrent_client', '').lower()
-        prefer_small_pieces = self.config['TRACKERS'].get('MTV').get('prefer_mtv_torrent', False)
+        mtv_config = self.config['TRACKERS'].get('MTV')
+        if isinstance(mtv_config, dict):
+            prefer_small_pieces = mtv_config.get('prefer_mtv_torrent', False)
+        else:
+            prefer_small_pieces = False
         best_match = None  # Track the best match for fallback if prefer_small_pieces is enabled
 
         # Iterate through pre-specified hashes
@@ -103,6 +107,9 @@ class Clients():
 
                         # Retrieve the .torrent file
                         torrent_file_content = qbt_client.torrents_export(torrent_hash=hash_value)
+                        if not torrent_file_content:
+                            console.print(f"[bold red]qBittorrent returned an empty response for hash {hash_value}")
+                            continue  # Skip to the next hash
 
                         # Save the .torrent file
                         os.makedirs(extracted_torrent_dir, exist_ok=True)
@@ -273,7 +280,11 @@ class Clients():
         return valid, torrent_path
 
     async def search_qbit_for_torrent(self, meta, client):
-        prefer_small_pieces = self.config['TRACKERS'].get('MTV').get('prefer_mtv_torrent', False)
+        mtv_config = self.config['TRACKERS'].get('MTV')
+        if isinstance(mtv_config, dict):
+            prefer_small_pieces = mtv_config.get('prefer_mtv_torrent', False)
+        else:
+            prefer_small_pieces = False
         console.print("[green]Searching qBittorrent for an existing .torrent")
 
         torrent_storage_dir = client.get('torrent_storage_dir')

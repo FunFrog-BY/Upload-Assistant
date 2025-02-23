@@ -193,7 +193,9 @@ async def process_meta(meta, base_dir):
         if int(meta.get('randomized', 0)) >= 1:
             create_random_torrents(meta['base_dir'], meta['uuid'], meta['randomized'], meta['path'])
 
-        if meta['saved_description'] is False:
+        if 'saved_description' in meta and meta['saved_description'] is False:
+            meta = await prep.gen_desc(meta)
+        else:
             meta = await prep.gen_desc(meta)
 
         with open(f"{meta['base_dir']}/tmp/{meta['uuid']}/meta.json", 'w') as f:
@@ -302,10 +304,11 @@ async def do_the_thing(base_dir):
 
             console.print(f"[green]Gathering info for {os.path.basename(path)}")
             await process_meta(meta, base_dir)
+            console.print("Finished processing metadata")
 
             if 'we_are_uploading' not in meta:
                 console.print("we are not uploading.......")
-                if meta.get('queue') is not None:
+                if 'queue' in meta and meta.get('queue') is not None:
                     processed_files_count += 1
                     console.print(f"[cyan]Processed {processed_files_count}/{total_files} files.")
                     if not meta['debug']:
@@ -313,8 +316,9 @@ async def do_the_thing(base_dir):
                             await save_processed_file(log_file, path)
 
             else:
+                console.print("let's upload.......")
                 await process_trackers(meta, config, client, console, api_trackers, tracker_class_map, http_trackers, other_api_trackers)
-                if meta.get('queue') is not None:
+                if 'queue' in meta and meta.get('queue') is not None:
                     processed_files_count += 1
                     console.print(f"[cyan]Processed {processed_files_count}/{total_files} files.")
                     if not meta['debug']:

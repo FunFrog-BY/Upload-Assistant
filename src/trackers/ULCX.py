@@ -43,7 +43,7 @@ class ULCX():
         return type_id
 
     async def get_res_id(self, resolution, type):
-        if type not in ['DISC']:
+        if type in ['ENCODE']:
             if resolution not in ['8640p', '4320p', '2160p', '1440p', '1080p', '1080i', '720p']:
                 return None
         resolution_id = {
@@ -106,7 +106,7 @@ class ULCX():
             'type_id': type_id,
             'resolution_id': resolution_id,
             'tmdb': meta['tmdb'],
-            'imdb': meta['imdb_id'].replace('tt', ''),
+            'imdb': meta['imdb_id'],
             'tvdb': meta['tvdb_id'],
             'mal': meta['mal_id'],
             'igdb': 0,

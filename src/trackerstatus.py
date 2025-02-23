@@ -1,8 +1,9 @@
 import asyncio
 import os
+import sys
 from torf import Torrent
 from src.trackers.PTP import PTP
-from src.trackersetup import TRACKER_SETUP, tracker_class_map
+from src.trackersetup import TRACKER_SETUP, tracker_class_map, http_trackers
 from src.console import console
 from data.config import config
 from src.trackers.COMMON import COMMON
@@ -12,6 +13,16 @@ from src.imdb import get_imdb_info_api
 from src.torrentcreate import create_base_from_existing_torrent
 import cli_ui
 import copy
+
+
+def reset_terminal():
+    """Reset the terminal to a sane state."""
+    if os.name == "posix":
+        try:
+            if sys.stdin and sys.stdin.fileno() >= 0 and sys.stdin.isatty():
+                os.system("stty sane")
+        except (ValueError, OSError):
+            pass
 
 
 async def process_all_trackers(meta):
@@ -29,6 +40,7 @@ async def process_all_trackers(meta):
         local_tracker_status = {'banned': False, 'skipped': False, 'dupe': False, 'upload': False}
         disctype = local_meta.get('disctype', None)
         tracker_name = tracker_name.replace(" ", "").upper().strip()
+        console.print(f"\n[bold yellow]Processing Tracker: {tracker_name}[/bold yellow]")
 
         if local_meta['name'].endswith('DUPE?'):
             local_meta['name'] = local_meta['name'].replace(' DUPE?', '')
@@ -39,6 +51,8 @@ async def process_all_trackers(meta):
 
         if tracker_name in tracker_class_map:
             tracker_class = tracker_class_map[tracker_name](config=config)
+            if tracker_name in http_trackers:
+                await tracker_class.validate_credentials(meta)
             if tracker_name in {"THR", "PTP"}:
                 if local_meta.get('imdb_id', 0) == 0:
                     imdb_id = 0 if local_meta.get('unattended', False) else cli_ui.ask_string(
@@ -150,6 +164,8 @@ async def process_all_trackers(meta):
         for tracker_name in meta['trackers']:
             tracker_name, status = await process_single_tracker(tracker_name, meta)
             tracker_status[tracker_name] = status
+            if not sys.stdin.closed:
+                reset_terminal()
 
     if meta['debug']:
         console.print("\n[bold]Tracker Processing Summary:[/bold]")
