@@ -12,7 +12,11 @@ import shutil
 import cli_ui
 import traceback
 import time
-
+import gc
+import subprocess
+import re
+import requests
+from packaging import version
 from src.trackersetup import tracker_class_map, api_trackers, other_api_trackers, http_trackers
 from src.trackerhandle import process_trackers
 from src.queuemanage import handle_queue
@@ -24,7 +28,7 @@ from src.takescreens import disc_screenshots, dvd_screenshots, screenshots
 
 
 cli_ui.setup(color='always', title="Audionut's Upload Assistant")
-
+running_subprocesses = set()
 base_dir = os.path.abspath(os.path.dirname(__file__))
 
 try:
@@ -83,7 +87,11 @@ async def process_meta(meta, base_dir):
             console.print("[yellow]Running in Auto Mode")
     meta['base_dir'] = base_dir
     prep = Prep(screens=meta['screens'], img_host=meta['imghost'], config=config)
-    meta = await prep.gather_prep(meta=meta, mode='cli')
+    try:
+        meta = await prep.gather_prep(meta=meta, mode='cli')
+    except Exception as e:
+        console.print(f"Error in gather_prep: {e}")
+        console.print(traceback.format_exc())
     meta['name_notag'], meta['name'], meta['clean_name'], meta['potential_missing'] = await prep.get_name(meta)
     parser = Args(config)
     helper = UploadHelper()
@@ -124,6 +132,7 @@ async def process_meta(meta, base_dir):
     else:
         meta['we_are_uploading'] = True
         filename = meta.get('title', None)
+        bdmv_filename = meta.get('filename', None)
         bdinfo = meta.get('bdinfo', None)
         videopath = meta.get('filelist', [None])
         videopath = videopath[0] if videopath else None
@@ -132,41 +141,79 @@ async def process_meta(meta, base_dir):
             meta['manual_frames'] = {}
         manual_frames = meta['manual_frames']
         # Take Screenshots
-        if meta['is_disc'] == "BDMV":
-            use_vs = meta.get('vapoursynth', False)
-            try:
-                await disc_screenshots(
-                    meta, filename, bdinfo, meta['uuid'], base_dir, use_vs,
-                    meta.get('image_list', []), meta.get('ffdebug', False), None
-                )
-            except Exception as e:
-                console.print(f"[red]Error during BDMV screenshot capture: {e}")
+        try:
+            if meta['is_disc'] == "BDMV":
+                use_vs = meta.get('vapoursynth', False)
+                try:
+                    await disc_screenshots(
+                        meta, bdmv_filename, bdinfo, meta['uuid'], base_dir, use_vs,
+                        meta.get('image_list', []), meta.get('ffdebug', False), None
+                    )
+                except asyncio.CancelledError:
+                    console.print("[red]Screenshot capture was cancelled. Cleaning up...[/red]")
+                    await cleanup_screenshot_temp_files(meta)  # Cleanup only on cancellation
+                    raise  # Ensure cancellation propagates properly
+                except Exception as e:
+                    console.print(f"[red]Error during BDMV screenshot capture: {e}[/red]", highlight=False)
+                    await cleanup_screenshot_temp_files(meta)  # Cleanup only on error
 
-        elif meta['is_disc'] == "DVD":
-            try:
-                await dvd_screenshots(
-                    meta, 0, None, None
-                )
-            except Exception as e:
-                print(f"Error during DVD screenshot capture: {e}")
+            elif meta['is_disc'] == "DVD":
+                try:
+                    await dvd_screenshots(
+                        meta, 0, None, None
+                    )
+                except asyncio.CancelledError:
+                    console.print("[red]DVD screenshot capture was cancelled. Cleaning up...[/red]")
+                    await cleanup_screenshot_temp_files(meta)
+                    raise
+                except Exception as e:
+                    console.print(f"[red]Error during DVD screenshot capture: {e}[/red]", highlight=False)
+                    await cleanup_screenshot_temp_files(meta)
 
-        else:
-            try:
-                if meta['debug']:
-                    console.print(f"videopath: {videopath}, filename: {filename}, meta: {meta['uuid']}, base_dir: {base_dir}, manual_frames: {manual_frames}")
-                await screenshots(
-                    videopath, filename, meta['uuid'], base_dir, meta,
-                    manual_frames=manual_frames  # Pass additional kwargs directly
-                )
-            except Exception as e:
-                print(f"Error during generic screenshot capture: {e}")
+            else:
+                try:
+                    if meta['debug']:
+                        console.print(f"videopath: {videopath}, filename: {filename}, meta: {meta['uuid']}, base_dir: {base_dir}, manual_frames: {manual_frames}")
+
+                    await screenshots(
+                        videopath, filename, meta['uuid'], base_dir, meta,
+                        manual_frames=manual_frames  # Pass additional kwargs directly
+                    )
+                except asyncio.CancelledError:
+                    console.print("[red]Generic screenshot capture was cancelled. Cleaning up...[/red]")
+                    await cleanup_screenshot_temp_files(meta)
+                    raise
+                except Exception as e:
+                    console.print(f"[red]Error during generic screenshot capture: {e}[/red]", highlight=False)
+                    await cleanup_screenshot_temp_files(meta)
+
+        except asyncio.CancelledError:
+            console.print("[red]Process was cancelled. Performing cleanup...[/red]")
+            await cleanup_screenshot_temp_files(meta)
+            raise
+        except Exception as e:
+            console.print(f"[red]Unexpected error occurred: {e}[/red]")
+            await cleanup_screenshot_temp_files(meta)
 
         meta['cutoff'] = int(config['DEFAULT'].get('cutoff_screens', 1))
         if len(meta.get('image_list', [])) < meta.get('cutoff') and meta.get('skip_imghost_upload', False) is False:
             if 'image_list' not in meta:
                 meta['image_list'] = []
             return_dict = {}
-            new_images, dummy_var = await upload_screens(meta, meta['screens'], 1, 0, meta['screens'], [], return_dict=return_dict)
+            try:
+                new_images, dummy_var = await upload_screens(
+                    meta, meta['screens'], 1, 0, meta['screens'], [], return_dict=return_dict
+                )
+            except asyncio.CancelledError:
+                console.print("\n[red]Upload process interrupted! Cancelling tasks...[/red]")
+                return
+            except Exception as e:
+                console.print(f"\n[red]Unexpected error during upload: {e}[/red]")
+            finally:
+                # Cleanup
+                console.print("[yellow]Cleaning up resources...[/yellow]")
+                gc.collect()
+                console.print("[green]Upload process completed (with or without interruptions).[/green]")
 
         elif meta.get('skip_imghost_upload', False) is True and meta.get('image_list', False) is False:
             meta['image_list'] = []
@@ -202,6 +249,21 @@ async def process_meta(meta, base_dir):
             json.dump(meta, f, indent=4)
 
 
+async def cleanup_screenshot_temp_files(meta):
+    """Cleanup temporary screenshot files to prevent orphaned files in case of failures."""
+    tmp_dir = f"{meta['base_dir']}/tmp/{meta['uuid']}"
+    if os.path.exists(tmp_dir):
+        try:
+            for file in os.listdir(tmp_dir):
+                file_path = os.path.join(tmp_dir, file)
+                if os.path.isfile(file_path) and file.endswith((".png", ".jpg")):
+                    os.remove(file_path)
+                    if meta['debug']:
+                        console.print(f"[yellow]Removed temporary screenshot file: {file_path}[/yellow]")
+        except Exception as e:
+            console.print(f"[red]Error cleaning up temporary screenshot files: {e}[/red]", highlight=False)
+
+
 async def get_log_file(base_dir, queue_name):
     """
     Returns the path to the log file for the given base directory and queue name.
@@ -232,17 +294,65 @@ async def save_processed_file(log_file, file_path):
 
 def reset_terminal():
     """Reset the terminal to a sane state."""
-    if os.name == "posix":
+    if os.name == "posix" and sys.stdin.isatty():
         try:
-            if sys.stdin and sys.stdin.fileno() >= 0 and sys.stdin.isatty():
-                os.system("stty sane")
-        except (ValueError, OSError):
-            pass
+            subprocess.run(["stty", "sane"], check=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            try:
+                subprocess.run(["reset"], check=True)  # Fallback if stty is unavailable
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+
+
+def get_local_version(version_file):
+    """Extracts the local version from the version.py file."""
+    try:
+        with open(version_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        match = re.search(r'__version__\s*=\s*"([^"]+)"', content)
+        if match:
+            console.print(f"[cyan]Version[/cyan] [yellow]{match.group(1)}")
+            return match.group(1)
+        else:
+            console.print("[red]Version not found in local file.")
+            return None
+    except FileNotFoundError:
+        console.print("[red]Version file not found.")
+        return None
+
+
+def get_remote_version(url):
+    """Fetches the latest version information from the remote repository."""
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            content = response.text
+            match = re.search(r'__version__\s*=\s*"([^"]+)"', content)
+            if match:
+                return match.group(1), content
+            else:
+                console.print("[red]Version not found in remote file.")
+                return None, None
+        else:
+            console.print(f"[red]Failed to fetch remote version file. Status code: {response.status_code}")
+            return None, None
+    except requests.RequestException as e:
+        console.print(f"[red]An error occurred while fetching the remote version file: {e}")
+        return None, None
+
+
+def extract_changelog(content, from_version, to_version):
+    """Extracts the changelog entries between the specified versions."""
+    pattern = rf'__version__\s*=\s*"{re.escape(to_version)}"\s*(.*?)__version__\s*=\s*"{re.escape(from_version)}"'
+    match = re.search(pattern, content, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    else:
+        return None
 
 
 async def do_the_thing(base_dir):
     await asyncio.sleep(0.1)  # Ensure it's not racing
-    reset_terminal()
     meta = dict()
     paths = []
     for each in sys.argv[1:]:
@@ -250,6 +360,34 @@ async def do_the_thing(base_dir):
             paths.append(os.path.abspath(each))
         else:
             break
+
+    version_file = os.path.join(base_dir, 'data', 'version.py')
+    remote_version_url = 'https://raw.githubusercontent.com/Audionut/Upload-Assistant/master/data/version.py'
+
+    notice = config['DEFAULT'].get('update_notification', True)
+    verbose = config['DEFAULT'].get('verbose_notification', False)
+
+    if not notice:
+        return
+
+    local_version = get_local_version(version_file)
+    if not local_version:
+        return
+
+    remote_version, remote_content = get_remote_version(remote_version_url)
+    if not remote_version:
+        return
+
+    if version.parse(remote_version) > version.parse(local_version):
+        console.print(f"[red][NOTICE] [green]Update available: v[/green][yellow]{remote_version}")
+        await asyncio.sleep(1)
+        if verbose and remote_content:
+            changelog = extract_changelog(remote_content, local_version, remote_version)
+            if changelog:
+                await asyncio.sleep(1)
+                console.print(f"{changelog}")
+            else:
+                console.print("[yellow]Changelog not found between versions.[/yellow]")
 
     try:
         meta, help, before_args = parser.parse(tuple(' '.join(sys.argv[1:]).split(' ')), meta)
@@ -304,7 +442,6 @@ async def do_the_thing(base_dir):
 
             console.print(f"[green]Gathering info for {os.path.basename(path)}")
             await process_meta(meta, base_dir)
-            console.print("Finished processing metadata")
 
             if 'we_are_uploading' not in meta:
                 console.print("we are not uploading.......")
@@ -316,7 +453,6 @@ async def do_the_thing(base_dir):
                             await save_processed_file(log_file, path)
 
             else:
-                console.print("let's upload.......")
                 await process_trackers(meta, config, client, console, api_trackers, tracker_class_map, http_trackers, other_api_trackers)
                 if 'queue' in meta and meta.get('queue') is not None:
                     processed_files_count += 1
@@ -342,14 +478,97 @@ async def do_the_thing(base_dir):
         if not sys.stdin.closed:
             reset_terminal()
 
-if __name__ == '__main__':
+
+def check_python_version():
     pyver = platform.python_version_tuple()
     if int(pyver[0]) != 3 or int(pyver[1]) < 9:
         console.print("[bold red]Python version is too low. Please use Python 3.9 or higher.")
         sys.exit(1)
 
+
+async def cleanup():
+    """Ensure all running tasks and subprocesses are properly cleaned up before exiting."""
+    console.print("[yellow]Cleaning up tasks before exiting...[/yellow]")
+
+    # Terminate all tracked subprocesses
+    while running_subprocesses:
+        proc = running_subprocesses.pop()
+        if proc.returncode is None:  # If still running
+            console.print(f"[yellow]Terminating subprocess {proc.pid}...[/yellow]")
+            proc.terminate()  # Send SIGTERM first
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=3)  # Wait for process to exit
+            except asyncio.TimeoutError:
+                console.print(f"[red]Subprocess {proc.pid} did not exit in time, force killing.[/red]")
+                proc.kill()  # Force kill if it doesn't exit
+
+        # Close process streams safely
+        if proc.stdout:
+            try:
+                proc.stdout.close()
+            except Exception:
+                pass
+        if proc.stderr:
+            try:
+                proc.stderr.close()
+            except Exception:
+                pass
+        if proc.stdin:
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+
+    # Give some time for subprocess transport cleanup
+    await asyncio.sleep(0.1)
+
+    # Cancel all running asyncio tasks **gracefully**
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    console.print(f"[yellow]Cancelling {len(tasks)} remaining tasks...[/yellow]")
+
+    for task in tasks:
+        task.cancel()
+
+    # Stage 1: Give tasks a moment to cancel themselves
+    await asyncio.sleep(0.1)  # Ensures task loop unwinds properly
+
+    # Stage 2: Gather tasks with exception handling
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for result in results:
+        if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+            console.print(f"[red]Error during cleanup: {result}[/red]")
+
+    console.print("[green]Cleanup completed. Exiting safely.[/green]")
+
+
+async def main():
     try:
-        asyncio.run(do_the_thing(base_dir))  # Pass the correct base_dir value here
-    except (KeyboardInterrupt):
-        console.print("[bold red]Program interrupted. Exiting.")
+        await do_the_thing(base_dir)  # Ensure base_dir is correctly defined
+    except asyncio.CancelledError:
+        console.print("[red]Tasks were cancelled. Exiting safely.[/red]")
+    except KeyboardInterrupt:
+        console.print("[bold red]Program interrupted. Exiting safely.[/bold red]")
+    except Exception as e:
+        console.print(f"[bold red]Unexpected error: {e}[/bold red]")
+    finally:
+        await cleanup()
         reset_terminal()
+
+
+if __name__ == "__main__":
+    check_python_version()
+
+    try:
+        # Use ProactorEventLoop for Windows subprocess handling
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+        asyncio.run(main())  # Ensures proper loop handling and cleanup
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    except BaseException as e:
+        console.print(f"[bold red]Critical error: {e}[/bold red]")
+    finally:
+        reset_terminal()
+        sys.exit(0)

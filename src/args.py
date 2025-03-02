@@ -63,6 +63,7 @@ class Args():
         parser.add_argument('-hdb', '--hdb', nargs='*', required=False, help="HDB torrent id/link", type=str)
         parser.add_argument('-btn', '--btn', nargs='*', required=False, help="BTN torrent id/link", type=str)
         parser.add_argument('-bhd', '--bhd', nargs='*', required=False, help="BHD infohash", type=str)
+        parser.add_argument('-jptv', '--jptv', nargs='*', required=False, help="JPTV torrent id/link", type=str)
         parser.add_argument('-onlyID', '--onlyID', action='store_true', required=False, help="Only grab meta ids (tmdb/imdb/etc) from tracker, not description/image links.")
         parser.add_argument('--foreign', dest='foreign', action='store_true', required=False, help="Set for TIK Foreign category")
         parser.add_argument('--opera', dest='opera', action='store_true', required=False, help="Set for TIK Opera & Musical category")
@@ -88,7 +89,7 @@ class Args():
         parser.add_argument('-sdc', '--skip-dupe-check', action='store_true', required=False, help="Pass if you know this is a dupe (Skips dupe check)", dest="dupe")
         parser.add_argument('-debug', '--debug', action='store_true', required=False, help="Debug Mode, will run through all the motions providing extra info, but will not upload to trackers.")
         parser.add_argument('-ffdebug', '--ffdebug', action='store_true', required=False, help="Will show info from ffmpeg while taking screenshots.")
-        parser.add_argument('-mps', '--max-piece-size', nargs='*', required=False, help="Set max piece size allowed in MiB for default torrent creation (default 256 MiB)", choices=['2', '4', '8', '16', '32', '64', '128', '256'])
+        parser.add_argument('-mps', '--max-piece-size', nargs='*', required=False, help="Set max piece size allowed in MiB for default torrent creation (default 128 MiB)", choices=['2', '4', '8', '16', '32', '64', '128'])
         parser.add_argument('-nh', '--nohash', action='store_true', required=False, help="Don't hash .torrent")
         parser.add_argument('-rh', '--rehash', action='store_true', required=False, help="DO hash .torrent")
         parser.add_argument('-dr', '--draft', action='store_true', required=False, help="Send to drafts (BHD, LST)")
@@ -251,6 +252,20 @@ class Args():
 
                     elif key == 'bhd':
                         meta['bhd'] = value2
+
+                    elif key == 'jptv':
+                        if value2.startswith('http'):
+                            parsed = urllib.parse.urlparse(value2)
+                            try:
+                                jptvpath = parsed.path
+                                if jptvpath.endswith('/'):
+                                    jptvpath = jptvpath[:-1]
+                                meta['jptv'] = jptvpath.split('/')[-1]
+                            except Exception:
+                                console.print('[red]Unable to parse id from url')
+                                console.print('[red]Continuing without --jptv')
+                        else:
+                            meta['jptv'] = value2
 
                     else:
                         meta[key] = value2
