@@ -557,13 +557,20 @@ class Prep():
     async def is_scene(self, video, meta, imdb=None):
         scene = False
         base = os.path.basename(video)
-        base = os.path.splitext(base)[0]
+        match = re.match(r"^(.+)\.[a-zA-Z0-9]{3}$", os.path.basename(video))
+
+        if match and (not meta['is_disc'] or meta['keep_folder']):
+            base = match.group(1)
         base = urllib.parse.quote(base)
         url = f"https://api.srrdb.com/v1/search/r:{base}"
+        if meta['debug']:
+            console.print("Using SRRDB url", url)
         if 'scene' not in meta:
             try:
                 response = requests.get(url, timeout=30)
                 response_json = response.json()
+                if meta['debug']:
+                    console.print(response_json)
 
                 if int(response_json.get('resultsCount', 0)) > 0:
                     first_result = response_json['results'][0]
@@ -601,13 +608,25 @@ class Prep():
 
                     # IMDb Handling
                     try:
-                        r = requests.get(f"https://api.srrdb.com/v1/imdb/{base}")
-                        r = r.json()
+                        response = requests.get(f"https://api.srrdb.com/v1/imdb/{base}")
 
-                        if r['releases'] != [] and imdb is None:
-                            imdb = r['releases'][0].get('imdb', imdb) if r['releases'][0].get('imdb') is not None else imdb
-                        console.print(f"[green]SRRDB: Matched to {first_result['release']}")
-                    except Exception as e:
+                        if response.status_code == 200:
+                            r = response.json()
+
+                            if r.get('releases') and imdb == 0:
+                                imdb_str = r['releases'][0].get('imdb') or r['releases'][0].get('imdbId')
+
+                                if imdb_str:
+                                    imdb_str = str(imdb_str).lstrip('tT')  # Strip 'tt' or 'TT'
+                                    imdb = int(imdb_str) if imdb_str.isdigit() else 0
+
+                                first_result = r['releases'][0] if r['releases'] else None
+                                if first_result:
+                                    console.print(f"[green]SRRDB: Matched to {first_result['release']}")
+                        else:
+                            console.print(f"[yellow]SRRDB API request failed with status: {response.status_code}")
+
+                    except requests.RequestException as e:
                         console.print("[yellow]Failed to fetch IMDb information:", e)
 
                 else:
@@ -1137,13 +1156,17 @@ class Prep():
             repack = "REPACK3"
         if "PROPER" in (video or edition.upper()):
             repack = "PROPER"
+        if "PROPER" in (video or edition.upper()):
+            repack = "PROPER2"
+        if "PROPER" in (video or edition.upper()):
+            repack = "PROPER3"
         if "RERIP" in (video or edition.upper()):
             repack = "RERIP"
 
         # print(f"Repack after Checks: {repack}")
 
         # Only remove REPACK, RERIP, or PROPER from edition if they're not part of manual_edition
-        if not manual_edition or all(tag.lower() not in ['repack', 'repack2', 'repack3', 'proper', 'rerip'] for tag in manual_edition.strip().lower().split()):
+        if not manual_edition or all(tag.lower() not in ['repack', 'repack2', 'repack3', 'proper', 'proper2', 'proper3', 'rerip'] for tag in manual_edition.strip().lower().split()):
             edition = re.sub(r"(\bREPACK\d?\b|\bRERIP\b|\bPROPER\b)", "", edition, flags=re.IGNORECASE).strip()
         if edition:
             console.print(f"Final Edition: {edition}")

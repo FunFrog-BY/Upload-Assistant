@@ -170,13 +170,13 @@ async def tmdb_other_meta(meta):
             else:
                 imdb_id_clean = imdb_id.lstrip('t')  # Remove 'tt' prefix safely
                 if imdb_id_clean.isdigit():  # Ensure it's a valid numeric string
-                    meta['imdb_id'] = str(int(imdb_id_clean)).zfill(7)
+                    meta['imdb_id'] = int(meta.get('imdb_id', 0))
                 else:
                     console.print(f"[bold red]Invalid IMDb ID returned: {imdb_id}[/bold red]")
                     meta['imdb_id'] = 0  # Default to 0 if invalid
 
         else:
-            meta['imdb_id'] = str(meta.get('imdb_id')).zfill(7)
+            meta['imdb_id'] = int(meta.get('imdb_id', 0))
 
         # TVDB ID Handling
         if meta.get('tvdb_id') == 0:
@@ -204,8 +204,8 @@ async def tmdb_other_meta(meta):
         meta['tmdb_directors'] = await get_directors(movie)
         if meta.get('anime', False) is False:
             meta['mal_id'], meta['aka'], meta['anime'], meta['demographic'] = await get_anime(response, meta)
-        if meta.get('mal') is not None:
-            meta['mal_id'] = meta['mal']
+        if meta.get('mal_manual') != 0:
+            meta['mal_id'] = meta['mal_manual']
         meta['poster'] = response.get('poster_path', "")
         meta['tmdb_poster'] = response.get('poster_path', "")
         meta['overview'] = response['overview']
@@ -235,13 +235,13 @@ async def tmdb_other_meta(meta):
             else:
                 imdb_id_clean = imdb_id.lstrip('t')  # Remove 'tt' prefix safely
                 if imdb_id_clean.isdigit():  # Ensure it's a valid numeric string
-                    meta['imdb_id'] = str(int(imdb_id_clean)).zfill(7)
+                    meta['imdb_id'] = int(meta.get('imdb_id', 0))
                 else:
                     console.print(f"[bold red]Invalid IMDb ID returned: {imdb_id}[/bold red]")
                     meta['imdb_id'] = 0  # Default to 0 if invalid
 
         else:
-            meta['imdb_id'] = str(meta.get('imdb_id')).zfill(7)
+            meta['imdb_id'] = int(meta.get('imdb_id', 0))
 
         # TVDB ID Handling
         if meta.get('tvdb_id') == 0:
@@ -268,8 +268,8 @@ async def tmdb_other_meta(meta):
         meta['genres'] = await get_genres(response)
         meta['tmdb_directors'] = await get_directors(tv)
         meta['mal_id'], meta['aka'], meta['anime'], meta['demographic'] = await get_anime(response, meta)
-        if meta.get('mal') is not None:
-            meta['mal_id'] = meta['mal']
+        if meta.get('mal_manual') != 0:
+            meta['mal_id'] = meta['mal_manual']
         meta['poster'] = response.get('poster_path', '')
         meta['overview'] = response['overview']
 
