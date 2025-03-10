@@ -10,7 +10,7 @@ async def get_imdb_aka_api(imdb_id, meta):
     if imdb_id == 0:
         return "", None
     if not str(imdb_id).startswith("tt"):
-        imdb_id = f"tt{imdb_id}"
+        imdb_id = f"tt{imdb_id:07d}"
     url = "https://api.graphql.imdb.com/"
     query = {
         "query": f"""
@@ -77,14 +77,15 @@ async def get_imdb_info_api(imdbID, meta):
     imdb_info = {}
     if imdbID and imdbID != 0:
         try:
-            imdbIDtt = f"tt{imdbID}" if not str(imdbID).startswith("tt") else imdbID
+            if not str(imdbID).startswith("tt"):
+                imdbID = f"tt{imdbID:07d}"
         except Exception as e:
             console.print(f"[red]Error:[/red] {e}")
             return imdb_info
         query = {
             "query": f"""
             query GetTitleInfo {{
-                title(id: "{imdbIDtt}") {{
+                title(id: "{imdbID}") {{
                 id
                 titleText {{
                     text
@@ -293,5 +294,5 @@ async def search_imdb(filename, search_year):
     for movie in search:
         if filename in movie.get('title', ''):
             if movie.get('year') == search_year:
-                imdbID = str(movie.movieID).replace('tt', '')
+                imdbID = int(str(movie.movieID).replace('tt', '').strip())
     return imdbID

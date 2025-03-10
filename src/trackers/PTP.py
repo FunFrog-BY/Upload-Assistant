@@ -114,7 +114,7 @@ class PTP():
                                 # First, try matching in filelist > path
                                 for file in torrent['FileList']:
                                     if file.get('Path') == filename:
-                                        imdb_id = movie['ImdbId']
+                                        imdb_id = int(movie.get('ImdbId', 0) or 0)
                                         ptp_torrent_id = torrent['Id']
                                         dummy, ptp_torrent_hash, *_ = await self.get_imdb_from_torrent_id(ptp_torrent_id)
                                         console.print(f'[bold green]Matched release with PTP ID: [yellow]{ptp_torrent_id}[/yellow][/bold green]')
@@ -127,7 +127,7 @@ class PTP():
 
                                 # If no match in filelist > path, check directly in filepath
                                 if torrent.get('FilePath') == filename:
-                                    imdb_id = movie['ImdbId']
+                                    imdb_id = int(movie.get('ImdbId', 0) or 0)
                                     ptp_torrent_id = torrent['Id']
                                     dummy, ptp_torrent_hash, *_ = await self.get_imdb_from_torrent_id(ptp_torrent_id)
                                     console.print(f'[bold green]Matched release with PTP ID: [yellow]{ptp_torrent_id}[/yellow][/bold green]')
@@ -173,7 +173,7 @@ class PTP():
         try:
             if response.status_code == 200:
                 response = response.json()
-                imdb_id = response['ImdbId']
+                imdb_id = int(response.get('ImdbId', 0) or 0)
                 ptp_infohash = None
                 for torrent in response['Torrents']:
                     if torrent.get('Id', 0) == str(ptp_torrent_id):
@@ -640,6 +640,8 @@ class PTP():
         desc = desc.replace("[left]", "[align=left]").replace("[/left]", "[/align]")
         desc = desc.replace("[right]", "[align=right]").replace("[/right]", "[/align]")
         desc = desc.replace("[code]", "[quote]").replace("[/code]", "[/quote]")
+        desc = desc.replace("[h3]", "").replace("[/h3]", "")
+        desc = re.sub(r"\[img=[^\]]+\]", "[img]", desc)
         return desc
 
     async def edit_desc(self, meta):
@@ -856,6 +858,10 @@ class PTP():
                     desc.write(f"[quote][align=center]This release is sourced from {meta['service_longname']}[/align][/quote]")
                 mi_dump = open(f"{meta['base_dir']}/tmp/{meta['uuid']}/MEDIAINFO.txt", 'r', encoding='utf-8').read()
                 desc.write(f"[mediainfo]{mi_dump}[/mediainfo]\n")
+                base2ptp = self.convert_bbcode(base)
+                if base2ptp.strip() != "":
+                    desc.write(base2ptp)
+                    desc.write("\n\n")
                 for img_index in range(len(images[:int(meta['screens'])])):
                     raw_url = meta['image_list'][img_index]['raw_url']
                     desc.write(f"[img]{raw_url}[/img]\n")
@@ -871,6 +877,10 @@ class PTP():
                     if i == 0:
                         if meta['type'] == 'WEBDL' and meta.get('service_longname', '') != '' and meta.get('description', None) is None and self.web_source is True:
                             desc.write(f"[quote][align=center]This release is sourced from {meta['service_longname']}[/align][/quote]")
+                        base2ptp = self.convert_bbcode(base)
+                        if base2ptp.strip() != "":
+                            desc.write(base2ptp)
+                            desc.write("\n\n")
                         mi_dump = open(f"{meta['base_dir']}/tmp/{meta['uuid']}/MEDIAINFO.txt", 'r', encoding='utf-8').read()
                         desc.write(f"[mediainfo]{mi_dump}[/mediainfo]\n")
                         for img_index in range(min(multi_screens, len(meta['image_list']))):
@@ -977,7 +987,14 @@ class PTP():
         await common.edit_torrent(meta, self.tracker, self.source_flag)
         resolution, other_resolution = self.get_resolution(meta)
         await self.edit_desc(meta)
-        desc = open(f"{meta['base_dir']}/tmp/{meta['uuid']}/[{self.tracker}]DESCRIPTION.txt", "r", encoding='utf-8').read()
+        file_path = f"{meta['base_dir']}/tmp/{meta['uuid']}/[{self.tracker}]DESCRIPTION.txt"
+
+        try:
+            os.stat(file_path)
+            with open(file_path, "r", encoding="utf-8") as f:
+                desc = f.read()
+        except OSError as e:
+            print(f"File error: {e}")
         ptp_subtitles = self.get_subtitles(meta)
         no_audio_found = False
         english_audio = False
@@ -1110,13 +1127,13 @@ class PTP():
                 meta=meta,
                 path=Path(meta['path']),
                 trackers=[self.announce_url],
-                source="L4G",
+                source="Audionut UA",
                 private=True,
                 exclude_globs=exclude,  # Ensure this is always a list
                 include_globs=include,  # Ensure this is always a list
                 creation_date=datetime.now(),
-                comment="Created by L4G's Upload Assistant",
-                created_by="L4G's Upload Assistant"
+                comment="Created by Audionut's Upload Assistant",
+                created_by="Audionut's Upload Assistant"
             )
 
             # Explicitly set the piece size and update metainfo

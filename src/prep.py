@@ -189,7 +189,7 @@ class Prep():
         # Debugging information after population
         # console.print(f"Debug: meta['filelist'] after population: {meta.get('filelist', 'Not Set')}")
 
-        if 'description' not in meta:
+        if 'description' not in meta or meta.get('description') is None:
             meta['description'] = ""
 
         description_text = meta.get('description', '')
@@ -327,7 +327,6 @@ class Prep():
             meta['imdb_id'] = await search_imdb(filename, meta['search_year'])
         # Get imdb data
         if meta.get('imdb_info', None) is None and int(meta['imdb_id']) != 0:
-            meta['imdb_id'] = str(meta.get('imdb_id')).zfill(7)
             meta['imdb_info'] = await get_imdb_info_api(meta['imdb_id'], meta)
         if meta.get('tag', None) is None:
             meta['tag'] = await self.get_tag(video, meta)
@@ -1156,9 +1155,9 @@ class Prep():
             repack = "REPACK3"
         if "PROPER" in (video or edition.upper()):
             repack = "PROPER"
-        if "PROPER" in (video or edition.upper()):
+        if "PROPER2" in (video or edition.upper()):
             repack = "PROPER2"
-        if "PROPER" in (video or edition.upper()):
+        if "PROPER3" in (video or edition.upper()):
             repack = "PROPER3"
         if "RERIP" in (video or edition.upper()):
             repack = "RERIP"

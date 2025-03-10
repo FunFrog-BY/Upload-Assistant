@@ -50,10 +50,25 @@ config = {
         # description, skip creating and uploading any further screenshots.
         "cutoff_screens": "3",
 
-        # multi processing task limit
-        # When optimizing images, limit to this many concurrent tasks
-        # defaults to os.cpu_count() // 2 if this value not set
+        # MULTI PROCESSING
+        # The optimization task is resource intensive, it can and will break linux terminals
+        # Find a balance of the options below that give the best performace without
+        # breaking your terminal. Windows doesn't care, even when spawing 200+ threads.
+
+        # When optimizing images, limit to this many concurrent workers.
+        # Each worker is a fresh python.exe instance.
+        # The final value used will be the lowest value of either 'number of screens'
+        # or this value.
+        # defaults to 1 if not set. Uncomment line below and set a value
         # "process_limit": "1",
+
+        # When optimizing images, limit to this many threads spawned by each worker above
+        # On the authors windows box, each python instance is 8 threads (including background wait
+        # threads that self terminate with time), thus while this value sets the number of threads
+        # used for each optimization worker, the total amount of threads spawned equals:
+        # (8) + threads * ('process_limit' OR 'screens')
+        # Defaults to 1 if not set. Uncomment line before and set a value
+        # "threads": "1",
 
         # Providing the option to change the size of the screenshot thumbnails where supported.
         # Default is 350, ie [img=350]
@@ -110,6 +125,9 @@ config = {
         # set true to only grab meta id's from trackers, not descriptions and images
         "only_id": False,
 
+        # set true to use mkbrr for torrent creation
+        "mkbrr": False,
+
     },
 
     # these are used for DB links on AR
@@ -123,9 +141,9 @@ config = {
 
     "TRACKERS": {
         # Which trackers do you want to upload to?
-        # Available tracker: ACM, AITHER, AL, ANT, AR, BHD, BHDTV, BLU, CBR, FNP, FRIKI, HDB, HDT, HUNO, ITT, JPTV, LCD, LST, LT, MTV, NBL, OE, OTW, PSS, PTER, PTP, PTT, R4E, RF, RTF, SN, STC, THR, TIK, TL, ULCX, UTP, YOINK
+        # Available tracker: ACM, AITHER, AL, ANT, AR, BHD, BHDTV, BLU, CBR, FNP, FRIKI, HDB, HDT, HUNO, ITT, JPTV, LCD, LST, LT, MTV, NBL, OE, OTW, PSS, PTER, PTP, PTT, R4E, RF, RTF, SN, STC, THR, TIK, TL, ULCX, UTP, YOINK, YUS
         # Remove the trackers from the default_trackers list that are not used, to save being asked everytime about tracker you do not have access too.
-        "default_trackers": "ACM, AITHER, AL, ANT, AR, BHD, BHDTV, BLU, CBR, FNP, FRIKI, HDB, HDT, HUNO, ITT, JPTV, LCD, LST, LT, MTV, NBL, OE, OTW, PSS, PTER, PTP, PTT, R4E, RF, RTF, SN, STC, THR, TIK, TL, ULCX, UTP, YOINK",
+        "default_trackers": "ACM, AITHER, AL, ANT, AR, BHD, BHDTV, BLU, CBR, FNP, FRIKI, HDB, HDT, HUNO, ITT, JPTV, LCD, LST, LT, MTV, NBL, OE, OTW, PSS, PTER, PTP, PTT, R4E, RF, RTF, SN, STC, THR, TIK, TL, ULCX, UTP, YOINK, YUS",
 
         "ACM": {
             "api_key": "ACM api key",
@@ -395,6 +413,11 @@ config = {
         "YOINK": {
             "api_key": "YOINK api key",
             "announce_url": "https://yoinked.org/announce/customannounceurl",
+            # "anon" : "False"
+        },
+        "YUS": {
+            "api_key": "YUS api key",
+            "announce_url": "https://yu-scene.net/announce/customannounceurl",
             # "anon" : "False"
         },
     },

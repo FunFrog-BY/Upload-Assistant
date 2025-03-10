@@ -7,6 +7,9 @@ import os
 import re
 import cli_ui
 import glob
+import time
+import subprocess
+import sys
 from src.console import console
 
 
@@ -119,7 +122,9 @@ class CustomTorrent(torf.Torrent):
 
 
 def create_torrent(meta, path, output_filename):
-    # Handle directories and file inclusion logic
+    if meta['debug']:
+        start_time = time.time()
+
     if meta['isdir']:
         if meta['keep_folder']:
             cli_ui.info('--keep-folder was specified. Using complete folder for torrent creation.')
@@ -127,47 +132,125 @@ def create_torrent(meta, path, output_filename):
         else:
             os.chdir(path)
             globs = glob.glob1(path, "*.mkv") + glob.glob1(path, "*.mp4") + glob.glob1(path, "*.ts")
-            no_sample_globs = []
-            for file in globs:
-                if not file.lower().endswith('sample.mkv') or "!sample" in file.lower():
-                    no_sample_globs.append(os.path.abspath(f"{path}{os.sep}{file}"))
+            no_sample_globs = [
+                os.path.abspath(f"{path}{os.sep}{file}") for file in globs
+                if not file.lower().endswith('sample.mkv') or "!sample" in file.lower()
+            ]
             if len(no_sample_globs) == 1:
                 path = meta['filelist'][0]
-    if meta['is_disc']:
-        include, exclude = "", ""
-    else:
-        exclude = ["*.*", "*sample.mkv", "!sample*.*"]
-        include = ["*.mkv", "*.mp4", "*.ts"]
 
-    # Create and write the new torrent using the CustomTorrent class
+    exclude = ["*.*", "*sample.mkv", "!sample*.*"] if not meta['is_disc'] else ""
+    include = ["*.mkv", "*.mp4", "*.ts"] if not meta['is_disc'] else ""
+
+    # If using mkbrr, run the external application
+    if meta.get('mkbrr'):
+        third_party_exe = os.path.join(meta['base_dir'], "bin", "mkbrr", "mkbrr.exe")
+        output_path = f"{meta['base_dir']}/tmp/{meta['uuid']}/{output_filename}.torrent"
+
+        if sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
+            cmd = ["mono", third_party_exe, "create", path, "-o", output_path]
+        else:
+            cmd = [third_party_exe, "create", path, "-o", output_path]
+
+        try:
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+
+            total_pieces = 100  # Default to 100% for scaling progress
+            pieces_done = 0
+            mkbrr_start_time = time.time()
+
+            for line in process.stdout:
+                line = line.strip()
+
+                # Detect hashing progress, speed, and percentage
+                match = re.search(r"Hashing pieces.*?\[(\d+\.\d+ MB/s)\]\s+(\d+)%", line)
+                if match:
+                    speed = match.group(1)  # Extract speed (e.g., "12734.21 MB/s")
+                    pieces_done = int(match.group(2))  # Extract percentage (e.g., "60")
+
+                    # Estimate ETA (Time Remaining)
+                    elapsed_time = time.time() - mkbrr_start_time
+                    if pieces_done > 0:
+                        estimated_total_time = elapsed_time / (pieces_done / 100)
+                        eta_seconds = max(0, estimated_total_time - elapsed_time)
+                        eta = time.strftime("%M:%S", time.gmtime(eta_seconds))
+                    else:
+                        eta = "--:--"  # Placeholder if we can't estimate yet
+
+                    cli_ui.info_progress(f"mkbrr hashing... {speed} | ETA: {eta}", pieces_done, total_pieces)
+
+                # Detect final output line
+                if "Wrote" in line and ".torrent" in line:
+                    console.print(f"[bold cyan]{line}")  # Print the final torrent file creation message
+
+            process.wait()
+            return output_path
+        except subprocess.CalledProcessError as e:
+            console.print(f"[bold red]Error creating torrent: {e.stderr}")
+            return None
+
+    # Fallback to CustomTorrent if mkbrr is not used
     torrent = CustomTorrent(
         meta=meta,
         path=path,
         trackers=["https://fake.tracker"],
-        source="L4G",
+        source="Audionut UA",
         private=True,
         exclude_globs=exclude or [],
         include_globs=include or [],
         creation_date=datetime.now(),
-        comment="Created by L4G's Upload Assistant",
-        created_by="L4G's Upload Assistant"
+        comment="Created by Audionut's Upload Assistant",
+        created_by="Audionut's Upload Assistant"
     )
 
-    # Ensure piece size is validated before writing
     torrent.validate_piece_size(meta)
-
-    # Generate and write the new torrent
     torrent.generate(callback=torf_cb, interval=5)
     torrent.write(f"{meta['base_dir']}/tmp/{meta['uuid']}/{output_filename}.torrent", overwrite=True)
     torrent.verify_filesize(path)
+
+    if meta['debug']:
+        finish_time = time.time()
+        console.print(f"torrent created in {finish_time - start_time:.4f} seconds")
 
     console.print("[bold green].torrent created", end="\r")
     return torrent
 
 
+torf_start_time = time.time()
+
+
 def torf_cb(torrent, filepath, pieces_done, pieces_total):
-    # print(f'{pieces_done/pieces_total*100:3.0f} % done')
-    cli_ui.info_progress("Hashing...", pieces_done, pieces_total)
+    global torf_start_time
+
+    if pieces_done == 0:
+        torf_start_time = time.time()  # Reset start time when hashing starts
+
+    elapsed_time = time.time() - torf_start_time
+
+    # Calculate percentage done
+    if pieces_total > 0:
+        percentage_done = (pieces_done / pieces_total) * 100
+    else:
+        percentage_done = 0
+
+    # Estimate ETA (if at least one piece is done)
+    if pieces_done > 0:
+        estimated_total_time = elapsed_time / (pieces_done / pieces_total)
+        eta_seconds = max(0, estimated_total_time - elapsed_time)
+        eta = time.strftime("%M:%S", time.gmtime(eta_seconds))
+    else:
+        eta = "--:--"
+
+    # Calculate hashing speed (MB/s)
+    if elapsed_time > 0 and pieces_done > 0:
+        piece_size = torrent.piece_size / (1024 * 1024)
+        speed = (pieces_done * piece_size) / elapsed_time
+        speed_str = f"{speed:.2f} MB/s"
+    else:
+        speed_str = "-- MB/s"
+
+    # Display progress with percentage, speed, and ETA
+    cli_ui.info_progress(f"Hashing... {speed_str} | ETA: {eta}", int(percentage_done), 100)
 
 
 def create_random_torrents(base_dir, uuid, num, path):
